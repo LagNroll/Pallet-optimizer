@@ -31,6 +31,87 @@
       <label for="maxWeight">Max weight (kg)</label>
       <input type="number" id="maxWeight" min="1" value="450">
     </div>
+    <div class="row">
+      <label for="overlimit">Overlimit (mm)</label>
+      <input type="number" id="overlimit" min="0" value="0">
+    </div>
+    <p class="hint">Allowed overhang beyond the pallet length and width.</p>
+
+    <div class="row">
+      <label for="onePieceOnePillar">One piece, one pillar</label>
+      <input type="checkbox" id="onePieceOnePillar" checked>
+    </div>
+    <p class="hint">Each pillar contains only one kind of piece (no mixing).</p>
+
+    <div class="row">
+      <label for="exceptionOn">Exception</label>
+      <input type="checkbox" id="exceptionOn" checked>
+    </div>
+    <div class="row" id="exceptionRow">
+      <label for="exceptionAmount">Max amount of other pieces on top</label>
+      <input type="number" id="exceptionAmount" min="0" value="10">
+    </div>
+    <p class="hint">Allows a small number of different pieces on top of other pillars.</p>
+  </section>
+
+  <section class="card">
+    <h2>3. Sheets</h2>
+
+    <h3>Option 1: Import Excel file</h3>
+    <input type="file" id="excelFile" accept=".xlsx,.xls,.csv">
+    <p class="hint">Columns: name, length, width, thickness, density, quantity, canBeUnder (yes/no)</p>
+
+    <h3>Option 2: Add manually</h3>
+    <div class="sheet-form">
+      <div class="row">
+        <label for="sheetName">Name</label>
+        <input type="text" id="sheetName" placeholder="e.g. Side panel">
+      </div>
+      <div class="row">
+        <label for="sheetLength">Length (mm)</label>
+        <input type="number" id="sheetLength" min="1">
+      </div>
+      <div class="row">
+        <label for="sheetWidth">Width (mm)</label>
+        <input type="number" id="sheetWidth" min="1">
+      </div>
+      <div class="row">
+        <label for="sheetThickness">Thickness (mm)</label>
+        <input type="number" id="sheetThickness" min="1">
+      </div>
+      <div class="row">
+        <label for="sheetDensity">Density (kg/m³)</label>
+        <input type="number" id="sheetDensity" min="1" value="750">
+      </div>
+      <div class="row">
+        <label for="sheetQty">Quantity</label>
+        <input type="number" id="sheetQty" min="1" value="1">
+      </div>
+      <div class="row">
+        <label for="sheetCanBeUnder">Can be under other pieces</label>
+        <input type="checkbox" id="sheetCanBeUnder" checked>
+      </div>
+      <button id="addSheetBtn">Add sheet</button>
+    </div>
+
+    <h3>Sheet list</h3>
+    <table id="sheetTable">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>L (mm)</th>
+          <th>W (mm)</th>
+          <th>T (mm)</th>
+          <th>Density</th>
+          <th>Qty</th>
+          <th>Under?</th>
+          <th>Weight/pc (kg)</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="sheetTableBody"></tbody>
+    </table>
+    <p id="sheetEmpty" class="hint">No sheets yet.</p>
   </section>
 
   <button id="saveBtn">Save</button>
@@ -41,6 +122,8 @@
     <pre id="summary"></pre>
   </section>
 
+  <!-- Library to read Excel files -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

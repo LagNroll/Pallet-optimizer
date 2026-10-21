@@ -39,3 +39,44 @@ button {
   margin: 0;
   font-size: 14px;
 }
+.hint {
+  font-size: 0.85rem;
+  color: #666;
+  margin: 2px 0 12px 0;
+}
+
+.sheet-form {
+  border: 1px dashed #bbb;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+th, td {
+  border: 1px solid #ddd;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+th {
+  background: #f3f4f6;
+}
+
+.delete-btn {
+  background: #dc2626;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.disabled-row {
+  opacity: 0.4;
+}
