@@ -37,7 +37,7 @@ function saveSettings() {
     }
     values[key] = v;
   }
-  settings = values;
+  settings =  values;
   localStorage.setItem("palletSettings", JSON.stringify(settings));
   showMessage("Saved!", "ok");
   updateSummary();
