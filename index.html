@@ -1,129 +1,58 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Pallet-optimizer</title>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Pallet optimizer · floor plan to loading plan</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script defer src="script.js"></script>
 </head>
 <body>
-  <h1>Pallet-optimizer</h1>
-
-  <section class="card">
-    <h2>1. Pallet size</h2>
-    <div class="row">
-      <label for="palletLength">Length (mm)</label>
-      <input type="number" id="palletLength" min="1" value="1200">
+  <header class="masthead"><div class="brand"><span class="brand-mark">▦</span><span>PALLET<br><b>OPTIMIZER</b></span></div><div class="stamp">V4 / LOAD PLANNER<br><span>mm · kg · practical</span></div></header>
+  <main class="app-shell">
+    <section class="hero"><p class="eyebrow">Warehouse planning tool</p><h1>Make every layer<br><em>pull its weight.</em></h1><p class="hero-copy">Set the pallet rules, add your sheet stock, then turn a flat list into a buildable loading plan.</p></section>
+    <div class="workspace">
+      <aside class="setup-column">
+        <section class="card"><div class="section-head"><span class="section-no">01</span><h2>Pallet size</h2></div><div class="row"><label>Length <input id="palletLength" type="number" value="1200" min="1"><small>mm</small></label><label>Width <input id="palletWidth" type="number" value="800" min="1"><small>mm</small></label></div></section>
+        <section class="card"><div class="section-head"><span class="section-no">02</span><h2>Limits</h2></div><div class="row"><label>Max loaded height <input id="maxHeight" type="number" value="1250" min="1"><small>mm</small></label><label>Max weight <input id="maxWeight" type="number" value="450" min="0"><small>kg</small></label></div><div class="row"><label>Overhang per side <input id="overhang" type="number" value="0" min="0"><small>mm</small></label><label>Base height <input id="palletBaseHeight" type="number" value="144" min="0"><small>mm</small></label></div><div class="row"><label>Pallet own weight <input id="palletOwnWeight" type="number" value="25" min="0"><small>kg</small></label><label class="check"><input id="onePieceOnePillar" type="checkbox" checked> one type per pillar</label></div><div class="row"><label class="check"><input id="exceptionOn" type="checkbox" checked> top-piece exception</label><label>Exception count <input id="exceptionAmount" type="number" value="10" min="0"><small>pieces</small></label></div><p class="hint">Overhang expands the usable footprint in every direction. Loaded height includes the pallet base.</p></section>
+        <section class="card"><div class="section-head"><span class="section-no">03</span><h2>Sheets</h2></div><p class="hint">Add a sheet type manually or import an .xlsx with columns: name, length, width, thickness, density, quantity, canBeUnder (yes/no).</p><div class="sheet-form"><input id="sheetName" placeholder="Name (e.g. Panel A)"><div class="row"><label>L <input id="sheetLength" type="number" min="1" placeholder="2440"><small>mm</small></label><label>W <input id="sheetWidth" type="number" min="1" placeholder="1220"><small>mm</small></label></div><div class="row"><label>Thickness <input id="sheetThickness" type="number" min="0.01" placeholder="18"><small>mm</small></label><label>Density <input id="sheetDensity" type="number" value="750" min="0"><small>kg/m³</small></label></div><div class="row"><label>Quantity <input id="sheetQty" type="number" value="1" min="1"><small>pieces</small></label><label class="check"><input id="sheetCanBeUnder" type="checkbox" checked> can be under</label></div><button id="addSheetBtn" class="button secondary" type="button">+ Add sheet type</button></div><div class="import-line"><label class="file-button">Import Excel <input id="excelFile" type="file" accept=".xlsx,.xls,.csv"></label><span id="importStatus">No file selected</span></div><div class="table-wrap"><table id="sheetTable"><thead><tr><th>Sheet</th><th>Size / t</th><th>Qty</th><th>Under</th><th></th></tr></thead><tbody id="sheetTableBody"></tbody></table><p id="sheetEmpty" class="empty">Your sheet list is empty.</p></div></section>
+        <div class="action-row"><button id="saveBtn" class="button ghost" type="button">Save setup</button><button id="calcBtn" class="button primary" type="button">Calculate plan <span>↗</span></button></div><pre id="summary" class="save-summary" aria-live="polite"></pre>
+      </aside>
+      <section class="results-column"><div id="resultSection" class="result-section"><div class="result-intro"><div><p class="eyebrow">04 / Result</p><h2>Your loading plan</h2></div><span id="planBadge" class="badge">Awaiting input</span></div><div id="overallSummary" class="overall-summary">Add sheet types and calculate to see the plan.</div><div id="warnings"></div><div id="palletResults"></div></div></section>
     </div>
-    <div class="row">
-      <label for="palletWidth">Width (mm)</label>
-      <input type="number" id="palletWidth" min="1" value="800">
-    </div>
-  </section>
-
-  <section class="card">
-    <h2>2. Limits</h2>
-    <div class="row">
-      <label for="maxHeight">Max height (mm)</label>
-      <input type="number" id="maxHeight" min="1" value="1250">
-    </div>
-    <div class="row">
-      <label for="maxWeight">Max weight (kg)</label>
-      <input type="number" id="maxWeight" min="1" value="450">
-    </div>
-    <div class="row">
-      <label for="overlimit">Overlimit (mm)</label>
-      <input type="number" id="overlimit" min="0" value="0">
-    </div>
-    <p class="hint">Allowed overhang beyond the pallet length and width.</p>
-
-    <div class="row">
-      <label for="onePieceOnePillar">One piece, one pillar</label>
-      <input type="checkbox" id="onePieceOnePillar" checked>
-    </div>
-    <p class="hint">Each pillar contains only one kind of piece (no mixing).</p>
-
-    <div class="row">
-      <label for="exceptionOn">Exception</label>
-      <input type="checkbox" id="exceptionOn" checked>
-    </div>
-    <div class="row" id="exceptionRow">
-      <label for="exceptionAmount">Max amount of other pieces on top</label>
-      <input type="number" id="exceptionAmount" min="0" value="10">
-    </div>
-    <p class="hint">Allows a small number of different pieces on top of other pillars.</p>
-  </section>
-
-  <section class="card">
-    <h2>3. Sheets</h2>
-
-    <h3>Option 1: Import Excel file</h3>
-    <input type="file" id="excelFile" accept=".xlsx,.xls,.csv">
-    <p class="hint">Columns: name, length, width, thickness, density, quantity, canBeUnder (yes/no)</p>
-
-    <h3>Option 2: Add manually</h3>
-    <div class="sheet-form">
-      <div class="row">
-        <label for="sheetName">Name</label>
-        <input type="text" id="sheetName" placeholder="e.g. Side panel">
-      </div>
-      <div class="row">
-        <label for="sheetLength">Length (mm)</label>
-        <input type="number" id="sheetLength" min="1">
-      </div>
-      <div class="row">
-        <label for="sheetWidth">Width (mm)</label>
-        <input type="number" id="sheetWidth" min="1">
-      </div>
-      <div class="row">
-        <label for="sheetThickness">Thickness (mm)</label>
-        <input type="number" id="sheetThickness" min="1">
-      </div>
-      <div class="row">
-        <label for="sheetDensity">Density (kg/m³)</label>
-        <input type="number" id="sheetDensity" min="1" value="750">
-      </div>
-      <div class="row">
-        <label for="sheetQty">Quantity</label>
-        <input type="number" id="sheetQty" min="1" value="1">
-      </div>
-      <div class="row">
-        <label for="sheetCanBeUnder">Can be under other pieces</label>
-        <input type="checkbox" id="sheetCanBeUnder" checked>
-      </div>
-      <button id="addSheetBtn">Add sheet</button>
-    </div>
-
-    <h3>Sheet list</h3>
-    <table id="sheetTable">
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>L (mm)</th>
-          <th>W (mm)</th>
-          <th>T (mm)</th>
-          <th>Density</th>
-          <th>Qty</th>
-          <th>Under?</th>
-          <th>Weight/pc (kg)</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody id="sheetTableBody"></tbody>
-    </table>
-    <p id="sheetEmpty" class="hint">No sheets yet.</p>
-  </section>
-
-  <button id="saveBtn">Save</button>
-  <p id="message"></p>
-
-  <section class="card summary">
-    <h2>Current settings</h2>
-    <pre id="summary"></pre>
-  </section>
-
-  <!-- Library to read Excel files -->
+  </main>
+  <footer><span>PALLET OPTIMIZER / V4</span><span>Build with the numbers you trust.</span></footer>
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/vce701823e78c4301a35b7e07294d87301792088814092" integrity="sha512-UKNk8GbxkABxKcXYuLkO16EleLGUkcvJWtpSNmExE0Too3ZaFAxTscNWEc1OdAv5/BikHawapSCaiD2XCmp+Bw==" data-cf-beacon='{"version":"2024.11.0","token":"8607d2a720d14b038279025b2b5a82e5","spa":2}' crossorigin="anonymous"></script>
+</body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Pallet optimizer · floor plan to loading plan</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="script.js"></script>
-</body>
-</html>
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script defer src="script.js"></script>
+</head>
+<body>
+  <header class="masthead"><div class="brand"><span class="brand-mark">▦</span><span>PALLET<br><b>OPTIMIZER</b></span></div><div class="stamp">V4 / LOAD PLANNER<br><span>mm · kg · practical</span></div></header>
+  <main class="app-shell">
+    <section class="hero"><p class="eyebrow">Warehouse planning tool</p><h1>Make every layer<br><em>pull its weight.</em></h1><p class="hero-copy">Set the pallet rules, add your sheet stock, then turn a flat list into a buildable loading plan.</p></section>
+    <div class="workspace">
+      <aside class="setup-column">
+        <section class="card"><div class="section-head"><span class="section-no">01</span><h2>Pallet size</h2></div><div class="row"><label>Length <input id="palletLength" type="number" value="1200" min="1"><small>mm</small></label><label>Width <input id="palletWidth" type="number" value="800" min="1"><small>mm</small></label></div></section>
+        <section class="card"><div class="section-head"><span class="section-no">02</span><h2>Limits</h2></div><div class="row"><label>Max loaded height <input id="maxHeight" type="number" value="1250" min="1"><small>mm</small></label><label>Max weight <input id="maxWeight" type="number" value="450" min="0"><small>kg</small></label></div><div class="row"><label>Overhang per side <input id="overhang" type="number" value="0" min="0"><small>mm</small></label><label>Base height <input id="palletBaseHeight" type="number" value="144" min="0"><small>mm</small></label></div><div class="row"><label>Pallet own weight <input id="palletOwnWeight" type="number" value="25" min="0"><small>kg</small></label><label class="check"><input id="onePieceOnePillar" type="checkbox" checked> one type per pillar</label></div><div class="row"><label class="check"><input id="exceptionOn" type="checkbox" checked> top-piece exception</label><label>Exception count <input id="exceptionAmount" type="number" value="10" min="0"><small>pieces</small></label></div><p class="hint">Overhang expands the usable footprint in every direction. Loaded height includes the pallet base.</p></section>
+        <section class="card"><div class="section-head"><span class="section-no">03</span><h2>Sheets</h2></div><p class="hint">Add a sheet type manually or import an .xlsx with columns: name, length, width, thickness, density, quantity, canBeUnder (yes/no).</p><div class="sheet-form"><input id="sheetName" placeholder="Name (e.g. Panel A)"><div class="row"><label>L <input id="sheetLength" type="number" min="1" placeholder="2440"><small>mm</small></label><label>W <input id="sheetWidth" type="number" min="1" placeholder="1220"><small>mm</small></label></div><div class="row"><label>Thickness <input id="sheetThickness" type="number" min="0.01" placeholder="18"><small>mm</small></label><label>Density <input id="sheetDensity" type="number" value="750" min="0"><small>kg/m³</small></label></div><div class="row"><label>Quantity <input id="sheetQty" type="number" value="1" min="1"><small>pieces</small></label><label class="check"><input id="sheetCanBeUnder" type="checkbox" checked> can be under</label></div><button id="addSheetBtn" class="button secondary" type="button">+ Add sheet type</button></div><div class="import-line"><label class="file-button">Import Excel <input id="excelFile" type="file" accept=".xlsx,.xls,.csv"></label><span id="importStatus">No file selected</span></div><div class="table-wrap"><table id="sheetTable"><thead><tr><th>Sheet</th><th>Size / t</th><th>Qty</th><th>Under</th><th></th></tr></thead><tbody id="sheetTableBody"></tbody></table><p id="sheetEmpty" class="empty">Your sheet list is empty.</p></div></section>
+        <div class="action-row"><button id="saveBtn" class="button ghost" type="button">Save setup</button><button id="calcBtn" class="button primary" type="button">Calculate plan <span>↗</span></button></div><pre id="summary" class="save-summary" aria-live="polite"></pre>
+      </aside>
+      <section class="results-column"><div id="resultSection" class="result-section"><div class="result-intro"><div><p class="eyebrow">04 / Result</p><h2>Your loading plan</h2></div><span id="planBadge" class="badge">Awaiting input</span></div><div id="overallSummary" class="overall-summary">Add sheet types and calculate to see the plan.</div><div id="warnings"></div><div id="palletResults"></div></div></section>
+    </div>
+  </main>
+  <footer><span>PALLET OPTIMIZER / V4</span><span>Build with the numbers you trust.</span></footer>
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/vce701823e78c4301a35b7e07294d87301792088814092" integrity="sha512-UKNk8GbxkABxKcXYuLkO16EleLGUkcvJWtpSNmExE0Too3ZaFAxTscNWEc1OdAv5/BikHawapSCaiD2XCmp+Bw==" data-cf-beacon='{"version":"2024.11.0","token":"8607d2a720d14b038279025b2b5a82e5","spa":2}' crossorigin="anonymous"></script>
+</body></html>

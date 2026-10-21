@@ -1,170 +1,52 @@
-// ---------- Data ----------
-let sheets = []; // list of all sheets
-
-// ---------- Helpers ----------
-function getNumber(id) {
-  return Number(document.getElementById(id).value);
-}
-
-function calcWeightKg(length, width, thickness, density) {
-  // mm -> m, then volume (m³) x density (kg/m³)
-  const volume = (length / 1000) * (width / 1000) * (thickness / 1000);
-  return volume * density;
-}
-
-// ---------- Exception checkbox: enable/disable the amount field ----------
-const exceptionOn = document.getElementById('exceptionOn');
-const exceptionRow = document.getElementById('exceptionRow');
-const exceptionAmount = document.getElementById('exceptionAmount');
-
-function updateExceptionState() {
-  exceptionAmount.disabled = !exceptionOn.checked;
-  exceptionRow.classList.toggle('disabled-row', !exceptionOn.checked);
-}
-exceptionOn.addEventListener('change', updateExceptionState);
-updateExceptionState();
-
-// ---------- Sheet table ----------
-function renderSheets() {
-  const body = document.getElementById('sheetTableBody');
-  body.innerHTML = '';
-
-  sheets.forEach(function (s, index) {
-    const weight = calcWeightKg(s.length, s.width, s.thickness, s.density);
-    const row = document.createElement('tr');
-    row.innerHTML =
-      '<td>' + s.name + '</td>' +
-      '<td>' + s.length + '</td>' +
-      '<td>' + s.width + '</td>' +
-      '<td>' + s.thickness + '</td>' +
-      '<td>' + s.density + '</td>' +
-      '<td>' + s.qty + '</td>' +
-      '<td>' + (s.canBeUnder ? 'Yes' : 'No') + '</td>' +
-      '<td>' + weight.toFixed(2) + '</td>' +
-      '<td><button class="delete-btn" data-index="' + index + '">X</button></td>';
-    body.appendChild(row);
-  });
-
-  document.getElementById('sheetEmpty').style.display =
-    sheets.length === 0 ? 'block' : 'none';
-}
-
-// Delete button (event delegation: one listener for all delete buttons)
-document.getElementById('sheetTableBody').addEventListener('click', function (e) {
-  if (e.target.classList.contains('delete-btn')) {
-    const index = Number(e.target.dataset.index);
-    sheets.splice(index, 1);
-    renderSheets();
+/* PALLET OPTIMIZER V4 — pure packing core first, DOM wiring second. */
+(function(global){
+  const clone=o=>JSON.parse(JSON.stringify(o));
+  function norm(s){return {...s,length:+s.length,width:+s.width,thickness:+s.thickness,density:+s.density,qty:Math.max(0,Math.floor(+s.qty)),canBeUnder:s.canBeUnder!==false};}
+  function dims(s,rot){return rot?{w:s.width,h:s.length}:{w:s.length,h:s.width};}
+  function overlap(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;}
+  function supportOk(pillar,p,settings){return p.x>=pillar.x-1e-6&&p.y>=pillar.y-1e-6&&p.x+p.w<=pillar.x+pillar.w+1e-6&&p.y+p.h<=pillar.y+pillar.h+1e-6;}
+  function freeRects(placed, W,H){
+    const candidates=[{x:0,y:0,w:W,h:H}];
+    // Deterministic shelf-like search: all potential corners, choose first non-overlapping fit.
+    for(const q of placed){candidates.push({x:q.x+q.w,y:q.y,w:W-(q.x+q.w),h:q.h},{x:q.x,y:q.y+q.h,w:q.w,h:H-(q.y+q.h)});}
+    return candidates.filter(r=>r.w>0&&r.h>0);
   }
-});
-
-// ---------- Add a sheet manually ----------
-document.getElementById('addSheetBtn').addEventListener('click', function () {
-  const name = document.getElementById('sheetName').value.trim();
-  const length = getNumber('sheetLength');
-  const width = getNumber('sheetWidth');
-  const thickness = getNumber('sheetThickness');
-  const density = getNumber('sheetDensity');
-  const qty = getNumber('sheetQty');
-  const canBeUnder = document.getElementById('sheetCanBeUnder').checked;
-  const message = document.getElementById('message');
-
-  if (!name || length <= 0 || width <= 0 || thickness <= 0 || density <= 0 || qty <= 0) {
-    message.textContent = 'Please fill in all sheet fields with valid values.';
-    return;
+  function findPosition(placed,w,h,W,H){let best=null;for(const r of freeRects(placed,W,H)){if(w<=r.w+1e-6&&h<=r.h+1e-6){const score=(r.w-w)+(r.h-h);if(!best||score<best.score)best={x:r.x,y:r.y,score};}}return best;}
+  function packSheets(input, rawSettings){
+    const s={palletLength:+rawSettings.palletLength,palletWidth:+rawSettings.palletWidth,maxHeight:+rawSettings.maxHeight,maxWeight:+rawSettings.maxWeight,overhang:+rawSettings.overhang||0,palletBaseHeight:+rawSettings.palletBaseHeight||144,palletOwnWeight:+rawSettings.palletOwnWeight||0,onePieceOnePillar:rawSettings.onePieceOnePillar!==false,exceptionOn:rawSettings.exceptionOn!==false,exceptionAmount:+rawSettings.exceptionAmount||0};
+    const types=input.map(norm).filter(x=>x.qty>0); const W=s.palletLength+2*s.overhang,H=s.palletWidth+2*s.overhang; const unplaced=[];let pallets=[];
+    function newP(){return {pillars:[],placed:[],unplaced:[],weight:s.palletOwnWeight,height:s.palletBaseHeight,layers:[]};}
+    let pallet=newP();pallets.push(pallet);
+    const pending=[];types.forEach((t,ti)=>{for(let i=0;i<t.qty;i++)pending.push({type:t,typeIndex:ti,unit:i+1});});
+    // Bottom-support rule: under-capable stock gets first opportunity; top-only pieces are safely placed onto support.
+    pending.sort((a,b)=>Number(b.type.canBeUnder)-Number(a.type.canBeUnder)||b.type.thickness-a.type.thickness);
+    for(const item of pending){const t=item.type, weight=t.length*t.width*t.thickness/1e9*t.density;let placed=false;let reason='No available footprint/support';
+      if(t.length>W&&t.width>W)reason='Piece exceeds usable footprint even when rotated';
+      for(let pi=0;pi<pallets.length&&!placed;pi++){const p=pallets[pi];for(const rot of [false,true]){const d=dims(t,rot);if(d.w>W||d.h>H)continue;
+        let target=null,pos=null; const existing=p.pillars.filter(x=>!s.onePieceOnePillar||x.typeIndex===item.typeIndex||(s.exceptionOn&&item.type.canBeUnder===false));
+        for(const pillar of existing){const top=pillar.top;const candidate={x:pillar.x,y:pillar.y,w:d.w,h:d.h}; if(!supportOk(pillar,candidate,s))continue;if(!t.canBeUnder&&candidate.w>pillar.w+1e-6)continue;if(t.canBeUnder&&candidate.w>pillar.w+1e-6)continue;if(top+dims(t,rot).h*0+s.palletBaseHeight> s.maxHeight){} if(p.weight+weight>s.maxWeight+1e-6||top+t.thickness>s.maxHeight)continue; if(!s.exceptionOn&&pillar.typeIndex!==item.typeIndex)continue;if(s.exceptionOn&&pillar.typeIndex!==item.typeIndex&&pillar.exceptionCount>=s.exceptionAmount)continue;target=pillar;pos=candidate;break;}
+        if(!target){pos=findPosition(p.pillars,d.w,d.h,W,H);if(pos&&p.weight+weight<=s.maxWeight+1e-6&&s.palletBaseHeight+t.thickness<=s.maxHeight){target={x:pos.x,y:pos.y,w:d.w,h:d.h,typeIndex:item.typeIndex,type:t,top:s.palletBaseHeight, count:0, pieces:[],exceptionCount:0};p.pillars.push(target);}}
+        if(target&&pos){const z=target.top;const piece={name:t.name,typeIndex:item.typeIndex,x:pos.x,y:pos.y,z,w:d.w,h:d.h,t:t.thickness,rotated:rot,weight};p.placed.push(piece);target.pieces.push(piece);target.count++;target.top+=t.thickness;target.exceptionCount+=(target.typeIndex!==item.typeIndex?1:0);p.weight+=weight;p.height=Math.max(p.height,target.top);placed=true;break;}
+      }}
+      if(!placed){if(pallet.placed.length){pallet=newP();pallets.push(pallet); // retry once on fresh pallet
+          const fresh=packSheets([Object.assign({},t,{qty:1})],rawSettings);if(fresh.pallets[0].placed.length){const pp=fresh.pallets[0];pallet.placed=pp.placed;pallet.pillars=pp.pillars;pallet.weight=pp.weight;pallet.height=pp.height;placed=true;}else{pallet.unplaced.push({name:t.name,unit:item.unit,reason});}}
+        else pallet.unplaced.push({name:t.name,unit:item.unit,reason});}
+    }
+    // create build layers from pieces; z is base-relative and all pieces are contiguous in a pillar
+    pallets.forEach(p=>{const by={};p.placed.forEach(x=>{const key=x.z.toFixed(4);(by[key]??=[]).push(x);});p.layers=Object.keys(by).sort((a,b)=>+a-+b).map((z,i)=>({number:i+1,z:+z,pieces:by[z]}));p.unplaced=p.unplaced||[];});
+    return {settings:s,pallets,unplaced:pallets.flatMap(p=>p.unplaced),totalPlaced:pallets.reduce((a,p)=>a+p.placed.length,0),totalRequested:pending.length};
   }
+  global.PalletOptimizer={packSheets,overlap};
+})(typeof window!=='undefined'?window:globalThis);
 
-  sheets.push({ name, length, width, thickness, density, qty, canBeUnder });
-  renderSheets();
-  message.textContent = 'Sheet "' + name + '" added.';
-
-  // clear the form for the next sheet
-  document.getElementById('sheetName').value = '';
-  document.getElementById('sheetLength').value = '';
-  document.getElementById('sheetWidth').value = '';
-  document.getElementById('sheetThickness').value = '';
-});
-
-// ---------- Import Excel ----------
-document.getElementById('excelFile').addEventListener('change', function (e) {
-  const file = e.target.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = function (event) {
-    const data = new Uint8Array(event.target.result);
-    const workbook = XLSX.read(data, { type: 'array' });
-    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(firstSheet);
-
-    let added = 0;
-    rows.forEach(function (r) {
-      const sheet = {
-        name: String(r.name || r.Name || '').trim(),
-        length: Number(r.length || r.Length),
-        width: Number(r.width || r.Width),
-        thickness: Number(r.thickness || r.Thickness),
-        density: Number(r.density || r.Density || 750),
-        qty: Number(r.quantity || r.Quantity || r.qty || 1),
-        canBeUnder: String(r.canBeUnder || r.CanBeUnder || 'yes').toLowerCase() !== 'no'
-      };
-      if (sheet.name && sheet.length > 0 && sheet.width > 0 && sheet.thickness > 0) {
-        sheets.push(sheet);
-        added++;
-      }
-    });
-
-    renderSheets();
-    document.getElementById('message').textContent =
-      added + ' sheet(s) imported from "' + file.name + '".';
-  };
-  reader.readAsArrayBuffer(file);
-  e.target.value = ''; // allows re-importing the same file
-});
-
-// ---------- Save settings ----------
-document.getElementById('saveBtn').addEventListener('click', function () {
-  const settings = {
-    palletLength: getNumber('palletLength'),
-    palletWidth: getNumber('palletWidth'),
-    maxHeight: getNumber('maxHeight'),
-    maxWeight: getNumber('maxWeight'),
-    overlimit: getNumber('overlimit'),
-    onePieceOnePillar: document.getElementById('onePieceOnePillar').checked,
-    exceptionOn: exceptionOn.checked,
-    exceptionAmount: exceptionOn.checked ? getNumber('exceptionAmount') : 0,
-    sheets: sheets
-  };
-
-  const message = document.getElementById('message');
-
-  if (settings.palletLength <= 0 || settings.palletWidth <= 0 ||
-      settings.maxHeight <= 0 || settings.maxWeight <= 0) {
-    message.textContent = 'Pallet size and limits must be positive numbers.';
-    return;
-  }
-  if (settings.overlimit < 0) {
-    message.textContent = 'Overlimit cannot be negative.';
-    return;
-  }
-
-  const totalPieces = sheets.reduce((sum, s) => sum + s.qty, 0);
-  const totalWeight = sheets.reduce(
-    (sum, s) => sum + calcWeightKg(s.length, s.width, s.thickness, s.density) * s.qty, 0);
-
-  message.textContent = 'Settings saved.';
-  document.getElementById('summary').textContent =
-    'Pallet: ' + settings.palletLength + ' x ' + settings.palletWidth + ' mm\n' +
-    'Max height: ' + settings.maxHeight + ' mm\n' +
-    'Max weight: ' + settings.maxWeight + ' kg\n' +
-    'Overlimit: ' + settings.overlimit + ' mm\n' +
-    'One piece, one pillar: ' + (settings.onePieceOnePillar ? 'Yes' : 'No') + '\n' +
-    'Exception: ' + (settings.exceptionOn ? 'Yes (max ' + settings.exceptionAmount + ' pieces)' : 'No') + '\n' +
-    'Sheets: ' + sheets.length + ' type(s), ' + totalPieces + ' piece(s)\n' +
-    'Total weight of all sheets: ' + totalWeight.toFixed(1) + ' kg';
-
-  console.log(settings);
-});
-
-// First display
-renderSheets();
+const $=id=>document.getElementById(id);let sheets=[];let lastPlan=null;
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function settings(){return ['palletLength','palletWidth','maxHeight','maxWeight','overhang','palletBaseHeight','palletOwnWeight','exceptionAmount'].reduce((o,k)=>(o[k]=+$(k).value,o),{onePieceOnePillar:$('onePieceOnePillar').checked,exceptionOn:$('exceptionOn').checked});}
+function readForm(){return {name:$('sheetName').value.trim()||'Unnamed sheet',length:+$('sheetLength').value,width:+$('sheetWidth').value,thickness:+$('sheetThickness').value,density:+$('sheetDensity').value||750,qty:+$('sheetQty').value||1,canBeUnder:$('sheetCanBeUnder').checked};}
+function renderSheets(){ $('sheetTableBody').innerHTML=sheets.map((s,i)=>`<tr class="${s.canBeUnder?'':'disabled-row'}"><td><b>${esc(s.name)}</b></td><td>${s.length}×${s.width} / ${s.thickness} mm</td><td>${s.qty}</td><td>${s.canBeUnder?'yes':'top'}</td><td><button class="delete-btn" data-delete="${i}" type="button">×</button></td></tr>`).join('');$('sheetEmpty').style.display=sheets.length?'none':'block';document.querySelectorAll('[data-delete]').forEach(b=>b.onclick=()=>{sheets.splice(+b.dataset.delete,1);renderSheets();});}
+function color(i){return ['#d5ef50','#ff795f','#8bd4e8','#d7a6f4','#f0c36a','#8ce0ba'][i%6];}
+function topSvg(p,st){const scale=Math.min(1,620/(st.palletLength+2*st.overhang));const W=st.palletLength+2*st.overhang,H=st.palletWidth+2*st.overhang;let out=`<svg class="top-svg" viewBox="0 0 ${W*scale} ${H*scale}"><rect x="0" y="0" width="${W*scale}" height="${H*scale}" fill="#e4e8dd"/><rect x="${st.overhang*scale}" y="${st.overhang*scale}" width="${st.palletLength*scale}" height="${st.palletWidth*scale}" fill="none" stroke="#16221e" stroke-width="3"/><rect x="0" y="0" width="${W*scale}" height="${H*scale}" fill="none" stroke="#68746d" stroke-dasharray="7 5"/>`;p.pillars.forEach((q,i)=>{const x=q.x*scale,y=q.y*scale;out+=`<rect x="${x}" y="${y}" width="${q.w*scale}" height="${q.h*scale}" fill="${color(q.typeIndex)}" stroke="#16221e" stroke-width="1.4"/><text x="${x+4}" y="${y+14}" font-size="11" font-family="DM Mono" fill="#16221e">${esc(q.type.name)} ×${q.count}</text>`});return out+'</svg>';}
+function layerSvg(layer,p,st){const scale=Math.min(1,450/(st.palletLength+2*st.overhang)),W=st.palletLength+2*st.overhang,H=st.palletWidth+2*st.overhang;let out=`<svg class="layer-svg" viewBox="0 0 ${W*scale} ${H*scale}"><rect width="100%" height="100%" fill="#e4e8dd"/>`;layer.pieces.forEach(x=>out+=`<rect x="${x.x*scale}" y="${x.y*scale}" width="${x.w*scale}" height="${x.h*scale}" fill="${color(x.typeIndex)}" stroke="#16221e"/>`);return out+'</svg>';}
+function threeView(p,st,root){if(!window.THREE){root.innerHTML='<p class="hint">3D library unavailable; use the top and layer views.</p>';return;}const w=root.clientWidth||600,h=330,scene=new THREE.Scene();scene.background=new THREE.Color(0x101a17);const camera=new THREE.PerspectiveCamera(45,w/h,.1,10000);camera.position.set(st.palletLength*1.5,-st.palletWidth*1.8,st.maxHeight*1.3);camera.lookAt(st.palletLength/2,st.palletWidth/2,st.maxHeight/3);const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(w,h);renderer.setPixelRatio(Math.min(2,devicePixelRatio));root.appendChild(renderer.domElement);scene.add(new THREE.AmbientLight(0xffffff,1.5));const base=new THREE.Mesh(new THREE.BoxGeometry(st.palletLength,st.palletWidth,st.palletBaseHeight),new THREE.MeshBasicMaterial({color:0x697569}));base.position.set(st.palletLength/2,st.palletWidth/2,st.palletBaseHeight/2);scene.add(base);p.placed.forEach(x=>{const m=new THREE.Mesh(new THREE.BoxGeometry(x.w,x.h,x.t),new THREE.MeshLambertMaterial({color:color(x.typeIndex)}));m.position.set(x.x+x.w/2,x.y+x.h/2,x.z+x.t/2);scene.add(m);});let down=false,lx=0,ly=0;renderer.domElement.onpointerdown=e=>{down=true;lx=e.clientX;ly=e.clientY};window.addEventListener('pointerup',()=>down=false,{once:false});renderer.domElement.onpointermove=e=>{if(!down)return;camera.position.applyAxisAngle(new THREE.Vector3(0,0,1),(e.clientX-lx)*.006);camera.position.y+= (e.clientY-ly)*2;camera.lookAt(st.palletLength/2,st.palletWidth/2,st.maxHeight/3);lx=e.clientX;ly=e.clientY};renderer.domElement.onwheel=e=>{camera.position.multiplyScalar(e.deltaY>0?1.08:.93);camera.lookAt(st.palletLength/2,st.palletWidth/2,st.maxHeight/3);e.preventDefault()};(function loop(){if(!root.isConnected)return;requestAnimationFrame(loop);renderer.render(scene,camera)})();}
+function renderPlan(plan){const st=plan.settings;$('planBadge').textContent=`${plan.pallets.length} pallet${plan.pallets.length===1?'':'s'} / ${plan.totalPlaced} placed`;$('overallSummary').innerHTML=`<strong>${plan.totalPlaced} / ${plan.totalRequested}</strong> pieces placed across <strong>${plan.pallets.length}</strong> pallet${plan.pallets.length===1?'':'s'}. ${plan.unplaced.length?'Unplaced pieces need attention.':'Everything has a home.'}`;$('warnings').innerHTML=plan.unplaced.length?`<div class="warning"><b>Unplaced:</b> ${plan.unplaced.map(x=>`${esc(x.name)} #${x.unit} — ${esc(x.reason)}`).join('; ')}</div>`:'';$('palletResults').innerHTML=plan.pallets.map((p,pi)=>{const legends=[...new Map(p.placed.map(x=>[x.typeIndex,x.name]))].map(([i,n])=>`<span style="color:${color(i)}">■</span> ${esc(n)}`).join(' · ');return `<article class="pallet-card"><div class="pallet-head"><div><h3>Pallet ${pi+1}</h3><div class="pallet-meta">${p.placed.length} pieces · ${p.height.toFixed(0)} mm loaded · ${p.weight.toFixed(1)} kg total</div></div><div class="pallet-meta">${legends}</div></div><div class="view-tabs"><button class="tab active" data-tab="top-${pi}">Top view</button><button class="tab" data-tab="layers-${pi}">Build layers (${p.layers.length})</button><button class="tab" data-tab="three-${pi}">3D orbit</button></div><div class="view-pane" id="top-${pi}"><div class="svg-frame">${topSvg(p,st)}</div></div><div class="view-pane" id="layers-${pi}" style="display:none"><div class="layers">${p.layers.map(l=>`<div class="layer-card"><small>Layer ${l.number} · ${l.pieces.length} piece${l.pieces.length===1?'':'s'}</small><div class="svg-frame">${layerSvg(l,p,st)}</div></div>`).join('')}</div></div><div class="view-pane" id="three-${pi}" style="display:none"><div class="three-wrap" id="three-canvas-${pi}"><span class="three-note">drag to orbit · scroll to zoom</span></div></div><div class="view-pane"><ol class="instructions">${p.pillars.map((q,qi)=>`<li><b>Pillar ${qi+1}:</b> ${q.count}× ${esc(q.type.name)} (${q.type.length}×${q.type.width}×${q.type.thickness} mm${q.pieces[0]?.rotated?', rotated':''}), at (${q.x.toFixed(0)}, ${q.y.toFixed(0)}) mm.</li>`).join('')}</ol></div></article>`}).join('');document.querySelectorAll('.pallet-card').forEach((card,pi)=>card.querySelectorAll('.tab').forEach(tab=>tab.onclick=()=>{card.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));tab.classList.add('active');card.querySelectorAll('.view-pane').forEach(v=>v.style.display=v.id===tab.dataset.tab?'block':'none');if(tab.dataset.tab.startsWith('three-'))threeView(plan.pallets[pi],st,$(`three-canvas-${pi}`));}));}
+$('addSheetBtn').onclick=()=>{const s=readForm();if(!s.length||!s.width||!s.thickness||!s.qty){$('importStatus').textContent='Add length, width, thickness and quantity.';return;}sheets.push(s);renderSheets();};$('excelFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{try{const wb=XLSX.read(ev.target.result,{type:'array'}),rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);rows.forEach(x=>sheets.push({name:String(x.name||'Unnamed'),length:+x.length,width:+x.width,thickness:+x.thickness,density:+x.density||750,qty:+x.quantity||+x.qty||1,canBeUnder:!['no','false','0'].includes(String(x.canBeUnder).toLowerCase())}));renderSheets();$('importStatus').textContent=`Imported ${rows.length} row(s)`;}catch(err){$('importStatus').textContent='Could not read that workbook.';}};r.readAsArrayBuffer(f);};$('saveBtn').onclick=()=>{$('summary').textContent='Setup saved locally for this session. '+sheets.length+' sheet type(s) ready.';localStorage.setItem('palletSetup',JSON.stringify({settings:settings(),sheets}));};$('calcBtn').onclick=()=>{if(!sheets.length){$('warnings').innerHTML='<div class="warning">Add at least one sheet type before calculating.</div>';return;}lastPlan=PalletOptimizer.packSheets(sheets,settings());renderPlan(lastPlan);$('resultSection').scrollIntoView({behavior:'smooth',block:'start'});};renderSheets();
